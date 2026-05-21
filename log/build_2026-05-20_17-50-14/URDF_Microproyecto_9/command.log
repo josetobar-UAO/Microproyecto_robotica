@@ -1,0 +1,2 @@
+Invoking command in '/home/tobar/microproyecto_ws/build/URDF_Microproyecto_9': /usr/bin/cmake /home/tobar/microproyecto_ws/src/URDF_Microproyecto_9 -DCATKIN_INSTALL_INTO_PREFIX_ROOT=0 -DCMAKE_INSTALL_PREFIX=/home/tobar/microproyecto_ws/install/URDF_Microproyecto_9
+Invoked command in '/home/tobar/microproyecto_ws/build/URDF_Microproyecto_9' returned '1': /usr/bin/cmake /home/tobar/microproyecto_ws/src/URDF_Microproyecto_9 -DCATKIN_INSTALL_INTO_PREFIX_ROOT=0 -DCMAKE_INSTALL_PREFIX=/home/tobar/microproyecto_ws/install/URDF_Microproyecto_9
