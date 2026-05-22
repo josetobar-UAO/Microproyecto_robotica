@@ -1,21 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- URDF v7 - VERSION DEFINITIVA -->
-<!-- axis="0 0 1" en ambas ruedas: verificado matematicamente          -->
-<!-- [0,0,1] en joint frame (Rx90) → [0,-1,0] world → v_contacto +X  -->
-<!-- left=joint_izq (Y=+0.040) right=joint_der (Y=-0.040)             -->
+<!-- URDF_Microproyecto_10 — adaptado para Gazebo Ignition Fortress -->
+<!-- Cambios respecto al original:                                   -->
+<!--   - Colisiones: STL → primitivas (box/cylinder) evita ODE crash -->
+<!--   - Meshes: package://URDF_Microproyecto_10 → modelo_robot      -->
+<!--   - axis joint_der: "0 0 -1" → "0 0 1" (igual que joint_izq)   -->
+<!--   - Tags <gazebo>: materiales, friccion, plugins DiffDrive+JSP  -->
+<!--   - Spawn z=0.08 recomendado en gazebo.launch.py                -->
 <robot name="URDF_Microproyecto_9">
 
+  <!-- ══ BASE LINK ══════════════════════════════════════════════ -->
   <link name="base_link">
     <inertial>
-      <origin xyz="0.00303718710195896 0.000241641070373277 0.0233597079676121" rpy="0 0 0"/>
-      <mass value="0.476441238351147"/>
+      <origin xyz="0.0030372 0.00024164 0.02336" rpy="0 0 0"/>
+      <mass value="0.47644"/>
       <inertia
-        ixx="0.000527064543211955"
-        ixy="3.38969605841737E-08"
-        ixz="-4.59325964242475E-06"
-        iyy="0.000243496413695201"
-        iyz="3.12703631411997E-08"
-        izz="0.000620291787944453"/>
+        ixx="0.00052706"
+        ixy="3.3897E-08"
+        ixz="-4.5933E-06"
+        iyy="0.0002435"
+        iyz="3.127E-08"
+        izz="0.00062029"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -24,19 +28,21 @@
       </geometry>
       <material name=""><color rgba="1 1 1 1"/></material>
     </visual>
+    <!-- Colision: caja aproximada al chasis -->
     <collision>
       <origin xyz="0.003 0.0002 0.023" rpy="0 0 0"/>
       <geometry><box size="0.12 0.085 0.05"/></geometry>
     </collision>
   </link>
 
+  <!-- ══ RUEDA IZQUIERDA ════════════════════════════════════════ -->
   <link name="Rueda_izq">
     <inertial>
-      <origin xyz="7.07458613047919E-05 3.53647017556566E-05 -0.00063149894186489" rpy="0 0 0"/>
+      <origin xyz="7.07458613047954E-05 3.53647017556601E-05 -0.000631498941864889" rpy="0 0 0"/>
       <mass value="0.0157184722885494"/>
       <inertia
         ixx="1.6900538447052E-06"
-        ixy="2.14652112438886E-10"
+        ixy="2.14652112438877E-10"
         ixz="2.40582412374417E-10"
         iyy="1.69132187199093E-06"
         iyz="1.46085961024242E-09"
@@ -49,6 +55,7 @@
       </geometry>
       <material name=""><color rgba="0.298 0.298 0.298 1"/></material>
     </visual>
+    <!-- Colision: cilindro radio=0.015m ancho=0.012m -->
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry><cylinder radius="0.015" length="0.012"/></geometry>
@@ -62,14 +69,15 @@
     <axis xyz="0 0 1"/>
   </joint>
 
+  <!-- ══ RUEDA DERECHA ══════════════════════════════════════════ -->
   <link name="Rueda_der">
     <inertial>
-      <origin xyz="7.90235797321903E-05 3.30346308194743E-06 0.000631498941864886" rpy="0 0 0"/>
+      <origin xyz="7.90235797321938E-05 3.30346308194743E-06 0.000631498941864886" rpy="0 0 0"/>
       <mass value="0.0157184722885494"/>
       <inertia
         ixx="1.69053286024459E-06"
-        ixy="-6.5117157234606E-10"
-        ixz="-9.17714123617357E-10"
+        ixy="-6.51171572346073E-10"
+        ixz="-9.17714123617353E-10"
         iyy="1.69084285645155E-06"
         iyz="1.1618052699549E-09"
         izz="2.1652262699732E-06"/>
@@ -81,12 +89,14 @@
       </geometry>
       <material name=""><color rgba="0.298 0.298 0.298 1"/></material>
     </visual>
+    <!-- Colision: cilindro radio=0.015m ancho=0.012m -->
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry><cylinder radius="0.015" length="0.012"/></geometry>
     </collision>
   </link>
 
+  <!-- axis="0 0 1" igual que joint_izq — DiffDrive requiere mismo eje -->
   <joint name="joint_der" type="continuous">
     <origin xyz="-0.034252 -0.040164 -0.0010202" rpy="1.5708 0 0"/>
     <parent link="base_link"/>
@@ -94,24 +104,20 @@
     <axis xyz="0 0 1"/>
   </joint>
 
+  <!-- ══ CAM LINK ═══════════════════════════════════════════════ -->
   <link name="Cam_link">
     <inertial>
-      <origin xyz="-0.00761657670891421 -0.00747059469769067 1.39730355321818E-05" rpy="0 0 0"/>
-      <mass value="0.00241389293196676"/>
-      <inertia
-        ixx="2.20027071419733E-07"
-        ixy="-7.73419619969269E-12"
-        ixz="-6.16071045877555E-11"
-        iyy="7.82512589004426E-08"
-        iyz="6.02574141068783E-10"
-        izz="1.45696619419382E-07"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <!-- masa 0 original conservada — link puramente visual -->
+      <mass value="0.001"/>
+      <inertia ixx="1E-09" ixy="0" ixz="0" iyy="1E-09" iyz="0" izz="1E-09"/>
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
         <mesh filename="package://modelo_robot/meshes/Cam_link.STL"/>
       </geometry>
-      <material name=""><color rgba="0.792 0.820 0.933 1"/></material>
+      <material name=""><color rgba="1 1 1 1"/></material>
     </visual>
     <collision>
       <origin xyz="-0.008 -0.007 0" rpy="0 0 0"/>

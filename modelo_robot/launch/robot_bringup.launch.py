@@ -36,7 +36,7 @@ def generate_launch_description():
         parameters=[{
             'scale_linear':        0.3,
             'scale_linear_turbo':  0.5,
-            'scale_angular':       1.5,
+            'scale_angular':       0.3,
             'reverse_speed':       0.25,
             'deadzone':            0.25,
         }],
