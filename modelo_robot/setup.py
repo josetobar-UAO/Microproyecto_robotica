@@ -30,10 +30,11 @@ setup(
     description='Muestra un robot en ros2',
     license='Apache License 2.0',
     tests_require=['pytest'],
-    entry_points={
-        'console_scripts': [
-        ],
-    },
+    sentry_points={
+    'console_scripts': [
+        'tf_broadcaster_imu = modelo_robot.tf_broadcaster_imu:main',
+    ],
+},
 )
 
 

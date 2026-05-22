@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "firmware",
+			"path": ".."
+		},
+		{
+			"name": "micro_esp32",
+			"path": "../../../Documents/PlatformIO/Projects/micro_esp32"
+		}
+	],
+	"settings": {}
+}
