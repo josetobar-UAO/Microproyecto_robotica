@@ -98,7 +98,7 @@
 
   <!-- axis="0 0 1" igual que joint_izq — DiffDrive requiere mismo eje -->
   <joint name="joint_der" type="continuous">
-    <origin xyz="-0.034252 -0.040164 -0.0010202" rpy="1.5708 0 0"/>
+    <origin xyz="-0.034252 -0.040164 -0.0010202" rpy="-1.5708 0 0"/>
     <parent link="base_link"/>
     <child link="Rueda_der"/>
     <axis xyz="0 0 1"/>

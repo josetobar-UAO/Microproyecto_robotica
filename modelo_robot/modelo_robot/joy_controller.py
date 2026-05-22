@@ -43,7 +43,7 @@ class JoyController(Node):
 
         # axes[0] izq=+1 → angular.z debe ser + para girar izq en ROS
         # Con URDF v8 (joints swapeados), el signo correcto es +1.0
-        self.ANGULAR_SIGN = +1.0
+        self.ANGULAR_SIGN = -1.0
 
         self.pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.create_subscription(Joy, 'joy', self.joy_callback, 10)
@@ -96,7 +96,8 @@ class JoyController(Node):
             return
 
         # Movimiento normal
-        twist.linear.x  =  raw_lin * scale_lin
+        twist.linear.x  =  -raw_lin * scale_lin
+
         twist.angular.z =  raw_ang * scale_ang * self.ANGULAR_SIGN
         self.pub.publish(twist)
 
