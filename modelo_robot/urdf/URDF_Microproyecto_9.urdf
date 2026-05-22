@@ -1,206 +1,234 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
-     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
-     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
-<robot
-  name="URDF_Microproyecto_9">
-  <link
-    name="base_link">
+<!-- URDF corregido para Gazebo Ignition Fortress -->
+<!-- Cambios: colisiones reemplazadas por primitivas para evitar ODE crash -->
+<!-- Visual origin de base_link corregido a 0 0 0 para coincidir con collision -->
+<robot name="URDF_Microproyecto_9">
+
+  <!-- ============================================================ -->
+  <!--  BASE LINK                                                    -->
+  <!-- ============================================================ -->
+  <link name="base_link">
     <inertial>
-      <origin
-        xyz="0.00303718710195896 0.000241641070373277 0.0233597079676121"
-        rpy="0 0 0" />
-      <mass
-        value="0.476441238351147" />
+      <origin xyz="0.00303718710195896 0.000241641070373277 0.0233597079676121" rpy="0 0 0"/>
+      <mass value="0.476441238351147"/>
       <inertia
         ixx="0.000527064543211955"
         ixy="3.38969605841737E-08"
         ixz="-4.59325964242475E-06"
         iyy="0.000243496413695201"
         iyz="3.12703631411997E-08"
-        izz="0.000620291787944453" />
+        izz="0.000620291787944453"/>
     </inertial>
+
     <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh
-          filename="package://modelo_robot/meshes/base_link.STL" />
+        <mesh filename="package://modelo_robot/meshes/base_link.STL"/>
       </geometry>
-      <material
-        name="">
-        <color
-          rgba="1 1 1 1" />
+      <material name="">
+        <color rgba="1 1 1 1"/>
       </material>
     </visual>
+
+    <!-- COLISION: caja aproximada al chasis (~20x8.5x5 cm) -->
     <collision>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
+      <origin xyz="0.003 0.0002 0.023" rpy="0 0 0"/>
       <geometry>
-        <mesh
-          filename="package://modelo_robot/meshes/base_link.STL" />
+        <box size="0.12 0.085 0.05"/>
       </geometry>
     </collision>
   </link>
-  <link
-    name="Rueda_izq">
+
+  <!-- ============================================================ -->
+  <!--  RUEDA IZQUIERDA                                             -->
+  <!-- ============================================================ -->
+  <link name="Rueda_izq">
     <inertial>
-      <origin
-        xyz="7.07458613047919E-05 3.53647017556566E-05 -0.00063149894186489"
-        rpy="0 0 0" />
-      <mass
-        value="0.0157184722885494" />
+      <origin xyz="7.07458613047919E-05 3.53647017556566E-05 -0.00063149894186489" rpy="0 0 0"/>
+      <mass value="0.0157184722885494"/>
       <inertia
         ixx="1.6900538447052E-06"
         ixy="2.14652112438886E-10"
         ixz="2.40582412374417E-10"
         iyy="1.69132187199093E-06"
         iyz="1.46085961024242E-09"
-        izz="2.1652262699732E-06" />
+        izz="2.1652262699732E-06"/>
     </inertial>
+
     <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh
-          filename="package://modelo_robot/meshes/Rueda_izq.STL" />
+        <mesh filename="package://modelo_robot/meshes/Rueda_izq.STL"/>
       </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.298039215686275 0.298039215686275 0.298039215686275 1" />
+      <material name="">
+        <color rgba="0.298039215686275 0.298039215686275 0.298039215686275 1"/>
       </material>
     </visual>
+
+    <!-- COLISION: cilindro — radio 0.015 m, ancho ~0.012 m -->
+    <!-- rpy 0 0 0 porque el joint ya rota 1.5708 en X -->
     <collision>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh
-          filename="package://modelo_robot/meshes/Rueda_izq.STL" />
+        <cylinder radius="0.015" length="0.012"/>
       </geometry>
     </collision>
   </link>
-  <joint
-    name="joint_izq"
-    type="continuous">
-    <origin
-      xyz="-0.033127 0.040636 -0.0020475"
-      rpy="1.5708 0 0" />
-    <parent
-      link="base_link" />
-    <child
-      link="Rueda_izq" />
-    <axis
-      xyz="0 0 1" />
+
+  <joint name="joint_izq" type="continuous">
+    <origin xyz="-0.033127 0.040636 -0.0020475" rpy="1.5708 0 0"/>
+    <parent link="base_link"/>
+    <child link="Rueda_izq"/>
+    <axis xyz="0 0 1"/>
   </joint>
-  <link
-    name="Rueda_der">
+
+  <!-- ============================================================ -->
+  <!--  RUEDA DERECHA                                               -->
+  <!-- ============================================================ -->
+  <link name="Rueda_der">
     <inertial>
-      <origin
-        xyz="7.90235797321903E-05 3.30346308194743E-06 0.000631498941864886"
-        rpy="0 0 0" />
-      <mass
-        value="0.0157184722885494" />
+      <origin xyz="7.90235797321903E-05 3.30346308194743E-06 0.000631498941864886" rpy="0 0 0"/>
+      <mass value="0.0157184722885494"/>
       <inertia
         ixx="1.69053286024459E-06"
         ixy="-6.5117157234606E-10"
         ixz="-9.17714123617357E-10"
         iyy="1.69084285645155E-06"
         iyz="1.1618052699549E-09"
-        izz="2.1652262699732E-06" />
+        izz="2.1652262699732E-06"/>
     </inertial>
+
     <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh
-          filename="package://modelo_robot/meshes/Rueda_der.STL" />
+        <mesh filename="package://modelo_robot/meshes/Rueda_der.STL"/>
       </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.298039215686275 0.298039215686275 0.298039215686275 1" />
+      <material name="">
+        <color rgba="0.298039215686275 0.298039215686275 0.298039215686275 1"/>
       </material>
     </visual>
+
+    <!-- COLISION: cilindro — radio 0.015 m, ancho ~0.012 m -->
     <collision>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh
-          filename="package://modelo_robot/meshes/Rueda_der.STL" />
+        <cylinder radius="0.015" length="0.012"/>
       </geometry>
     </collision>
   </link>
-  <joint
-    name="joint_der"
-    type="continuous">
-    <origin
-      xyz="-0.034252 -0.040164 -0.0010202"
-      rpy="1.5708 0 0" />
-    <parent
-      link="base_link" />
-    <child
-      link="Rueda_der" />
-    <axis
-      xyz="0 0 -1" />
+
+  <joint name="joint_der" type="continuous">
+    <origin xyz="-0.034252 -0.040164 -0.0010202" rpy="1.5708 0 0"/>
+    <parent link="base_link"/>
+    <child link="Rueda_der"/>
+    <axis xyz="0 0 -1"/>
   </joint>
-  <link
-    name="Cam_link">
+
+  <!-- ============================================================ -->
+  <!--  CAM LINK                                                    -->
+  <!-- ============================================================ -->
+  <link name="Cam_link">
     <inertial>
-      <origin
-        xyz="-0.00761657670891421 -0.00747059469769067 1.39730355321818E-05"
-        rpy="0 0 0" />
-      <mass
-        value="0.00241389293196676" />
+      <origin xyz="-0.00761657670891421 -0.00747059469769067 1.39730355321818E-05" rpy="0 0 0"/>
+      <mass value="0.00241389293196676"/>
       <inertia
         ixx="2.20027071419733E-07"
         ixy="-7.73419619969269E-12"
         ixz="-6.16071045877555E-11"
         iyy="7.82512589004426E-08"
         iyz="6.02574141068783E-10"
-        izz="1.45696619419382E-07" />
+        izz="1.45696619419382E-07"/>
     </inertial>
+
     <visual>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh
-          filename="package://modelo_robot/meshes/Cam_link.STL" />
+        <mesh filename="package://modelo_robot/meshes/Cam_link.STL"/>
       </geometry>
-      <material
-        name="">
-        <color
-          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      <material name="">
+        <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
       </material>
     </visual>
+
+    <!-- COLISION: caja pequeña para la cámara -->
     <collision>
-      <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
+      <origin xyz="-0.008 -0.007 0" rpy="0 0 0"/>
       <geometry>
-        <mesh
-          filename="package://modelo_robot/meshes/Cam_link.STL" />
+        <box size="0.025 0.025 0.015"/>
       </geometry>
     </collision>
   </link>
-  <joint
-    name="joint_cam"
-    type="fixed">
-    <origin
-      xyz="0.04341 0.00043637 0.0255"
-      rpy="1.5708 0 0" />
-    <parent
-      link="base_link" />
-    <child
-      link="Cam_link" />
-    <axis
-      xyz="0 0 0" />
+
+  <joint name="joint_cam" type="fixed">
+    <origin xyz="0.04341 0.00043637 0.0255" rpy="1.5708 0 0"/>
+    <parent link="base_link"/>
+    <child link="Cam_link"/>
+    <axis xyz="0 0 0"/>
   </joint>
+
+  <!-- ============================================================ -->
+  <!--  GAZEBO: materiales                                          -->
+  <!-- ============================================================ -->
+  <gazebo reference="base_link">
+    <material>Gazebo/White</material>
+  </gazebo>
+  <gazebo reference="Rueda_izq">
+    <material>Gazebo/DarkGrey</material>
+  </gazebo>
+  <gazebo reference="Rueda_der">
+    <material>Gazebo/DarkGrey</material>
+  </gazebo>
+  <gazebo reference="Cam_link">
+    <material>Gazebo/Blue</material>
+  </gazebo>
+
+  <!-- ============================================================ -->
+  <!--  GAZEBO: fricción de ruedas (mejora tracción en simulación)  -->
+  <!-- ============================================================ -->
+  <gazebo reference="Rueda_izq">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>500000.0</kp>
+    <kd>10.0</kd>
+    <minDepth>0.001</minDepth>
+    <maxVel>0.1</maxVel>
+  </gazebo>
+  <gazebo reference="Rueda_der">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>500000.0</kp>
+    <kd>10.0</kd>
+    <minDepth>0.001</minDepth>
+    <maxVel>0.1</maxVel>
+  </gazebo>
+
+  <!-- ============================================================ -->
+  <!--  PLUGIN: tracción diferencial                                -->
+  <!-- ============================================================ -->
+  <gazebo>
+    <plugin
+      filename="libignition-gazebo-diff-drive-system.so"
+      name="ignition::gazebo::systems::DiffDrive">
+      <left_joint>joint_izq</left_joint>
+      <right_joint>joint_der</right_joint>
+      <wheel_separation>0.0808</wheel_separation>
+      <wheel_radius>0.015</wheel_radius>
+      <odom_publish_frequency>30</odom_publish_frequency>
+      <topic>cmd_vel</topic>
+      <odom_topic>odom</odom_topic>
+      <robot_base_frame>base_link</robot_base_frame>
+    </plugin>
+  </gazebo>
+
+  <!-- ============================================================ -->
+  <!--  PLUGIN: publicador de joint states                          -->
+  <!-- ============================================================ -->
+  <gazebo>
+    <plugin
+      filename="libignition-gazebo-joint-state-publisher-system.so"
+      name="ignition::gazebo::systems::JointStatePublisher">
+      <topic>joint_states</topic>
+    </plugin>
+  </gazebo>
+
 </robot>
