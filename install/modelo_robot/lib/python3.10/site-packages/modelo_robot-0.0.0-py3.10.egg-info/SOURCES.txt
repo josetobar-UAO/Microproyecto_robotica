@@ -10,11 +10,14 @@ setup.py
 ../build/modelo_robot/modelo_robot.egg-info/zip-safe
 launch/display.launch.py
 launch/gazebo.launch.py
+launch/robot_bringup.launch.py
 meshes/Cam_link.STL
 meshes/Rueda_der.STL
 meshes/Rueda_izq.STL
 meshes/base_link.STL
 modelo_robot/__init__.py
+modelo_robot/joy_controller.py
+modelo_robot/tf_broadcaster_imu.py
 resource/modelo_robot
 test/test_copyright.py
 test/test_flake8.py

@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- URDF v6 - ejes invertidos respecto a v5, giro con min_velocity -->
+<!-- URDF v7 - VERSION DEFINITIVA -->
+<!-- axis="0 0 1" en ambas ruedas: verificado matematicamente          -->
+<!-- [0,0,1] en joint frame (Rx90) → [0,-1,0] world → v_contacto +X  -->
+<!-- left=joint_izq (Y=+0.040) right=joint_der (Y=-0.040)             -->
 <robot name="URDF_Microproyecto_9">
 
   <link name="base_link">
@@ -52,15 +55,11 @@
     </collision>
   </link>
 
-  <!-- axis invertido: "0 0 -1" → en world frame con Rx90 = [0,+1,0] -->
-  <!-- v_contacto = [0,1,0] x [0,0,-0.015] = [-0.015,0,0] con vel+   -->
-  <!-- DiffDrive manda vel- para retroceder = contacto va en +X = ADELANTE -->
-  <!-- Equivalente a invertir el sentido: i=adelante, ,=atras          -->
   <joint name="joint_izq" type="continuous">
     <origin xyz="-0.033127 0.040636 -0.0020475" rpy="1.5708 0 0"/>
     <parent link="base_link"/>
     <child link="Rueda_izq"/>
-    <axis xyz="0 0 -1"/>
+    <axis xyz="0 0 1"/>
   </joint>
 
   <link name="Rueda_der">
@@ -92,7 +91,7 @@
     <origin xyz="-0.034252 -0.040164 -0.0010202" rpy="1.5708 0 0"/>
     <parent link="base_link"/>
     <child link="Rueda_der"/>
-    <axis xyz="0 0 -1"/>
+    <axis xyz="0 0 1"/>
   </joint>
 
   <link name="Cam_link">
@@ -127,6 +126,7 @@
     <axis xyz="0 0 0"/>
   </joint>
 
+  <!-- ══ GAZEBO: materiales ══════════════════════════════════════ -->
   <gazebo reference="base_link">
     <material>Gazebo/White</material>
   </gazebo>
@@ -140,6 +140,7 @@
     <material>Gazebo/Blue</material>
   </gazebo>
 
+  <!-- ══ GAZEBO: friccion ruedas ════════════════════════════════ -->
   <gazebo reference="Rueda_izq">
     <mu1>2.0</mu1>
     <mu2>2.0</mu2>
@@ -159,6 +160,7 @@
     <fdir1>1 0 0</fdir1>
   </gazebo>
 
+  <!-- ══ PLUGIN: DiffDrive ══════════════════════════════════════ -->
   <gazebo>
     <plugin
       filename="libignition-gazebo-diff-drive-system.so"
@@ -171,7 +173,6 @@
       <topic>cmd_vel</topic>
       <odom_topic>odom</odom_topic>
       <robot_base_frame>base_link</robot_base_frame>
-      <!-- min_velocity evita zona muerta en giro puro (j y l) -->
       <min_velocity>-10.0</min_velocity>
       <max_velocity>10.0</max_velocity>
       <min_acceleration>-5.0</min_acceleration>
@@ -179,6 +180,7 @@
     </plugin>
   </gazebo>
 
+  <!-- ══ PLUGIN: JointStatePublisher ═══════════════════════════ -->
   <gazebo>
     <plugin
       filename="libignition-gazebo-joint-state-publisher-system.so"

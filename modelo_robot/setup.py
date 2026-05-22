@@ -22,6 +22,7 @@ setup(
         (os.path.join('share', package_name, 'launch'), glob('launch/*.py')),
         (os.path.join('share', package_name, 'meshes'), glob('meshes/*')),
         (os.path.join('share', package_name, 'worlds'), glob('worlds/*')),
+        (os.path.join('share', package_name, 'config'), glob('config/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -30,9 +31,10 @@ setup(
     description='Muestra un robot en ros2',
     license='Apache License 2.0',
     tests_require=['pytest'],
-    sentry_points={
+    entry_points={
     'console_scripts': [
         'tf_broadcaster_imu = modelo_robot.tf_broadcaster_imu:main',
+        'joy_controller = modelo_robot.joy_controller:main', 
     ],
 },
 )

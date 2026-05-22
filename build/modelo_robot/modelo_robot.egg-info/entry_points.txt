@@ -1,3 +1,4 @@
 [console_scripts]
-
+joy_controller = modelo_robot.joy_controller:main
+tf_broadcaster_imu = modelo_robot.tf_broadcaster_imu:main
 
