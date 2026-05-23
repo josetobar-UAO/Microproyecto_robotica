@@ -14,6 +14,9 @@
 #include "WebServer.h"
 
 // Pines camara AI Thinker ESP-32S
+#define WIFI_SSID     "JoseTobar"
+#define WIFI_PASSWORD "87654321"
+#define STREAM_PORT   81
 #define PWDN_GPIO_NUM  32
 #define RESET_GPIO_NUM -1
 #define XCLK_GPIO_NUM   0
@@ -49,7 +52,8 @@ bool camera_init() {
   cfg.pin_d6 = Y8_GPIO_NUM; cfg.pin_d7 = Y9_GPIO_NUM;
   cfg.pin_xclk  = XCLK_GPIO_NUM;  cfg.pin_pclk  = PCLK_GPIO_NUM;
   cfg.pin_vsync = VSYNC_GPIO_NUM; cfg.pin_href  = HREF_GPIO_NUM;
-  cfg.pin_sscb_sda = SIOD_GPIO_NUM; cfg.pin_sscb_scl = SIOC_GPIO_NUM;
+  // Después (correcto)
+  cfg.pin_sccb_sda = SIOD_GPIO_NUM; cfg.pin_sccb_scl = SIOC_GPIO_NUM;
   cfg.pin_pwdn  = PWDN_GPIO_NUM;  cfg.pin_reset = RESET_GPIO_NUM;
   cfg.xclk_freq_hz = 20000000;
   cfg.pixel_format = PIXFORMAT_JPEG;
@@ -114,6 +118,7 @@ void handle_status() {
 void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
   Serial.begin(115200);
+  delay(1000); // dar tiempo al monitor a conectarse
   Serial.println("\n===== ESP32-CAM AI Thinker =====");
 
   pinMode(LED_GPIO_NUM, OUTPUT);
@@ -135,6 +140,7 @@ void setup() {
     delay(2000); ESP.restart();
   }
 
+  // Ahora SÍ tiene IP
   Serial.printf("\n[OK] IP: %s\n", WiFi.localIP().toString().c_str());
   Serial.printf("[OK] Stream: http://%s:%d/stream\n",
                 WiFi.localIP().toString().c_str(), STREAM_PORT);
