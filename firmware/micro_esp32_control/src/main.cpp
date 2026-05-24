@@ -9,7 +9,7 @@
  *   - IMU MPU6050 (modulo OC09600)
  *       SDA → D21  |  SCL → D22
  *   - micro-ROS via WiFi UDP
- *
+ *  
  * Arquitectura FreeRTOS (dual-core):
  *   Core 0 → microros_task  : WiFi + agente + executor ROS2
  *   Core 1 → motors_task    : aplica cmd_vel a motores a 50 Hz

@@ -24,7 +24,7 @@ class MjpegToRos(Node):
     def __init__(self):
         super().__init__('mjpeg_to_ros')
 
-        self.declare_parameter('stream_url', 'http://192.168.1.100:81/stream')
+        self.declare_parameter('stream_url', 'http://172.20.10.5:81/stream')
         self.declare_parameter('frame_id',   'camera_link')
         self.declare_parameter('width',      640)
         self.declare_parameter('height',     480)
@@ -46,7 +46,7 @@ class MjpegToRos(Node):
         if not self._connected:
             try:
                 url = self.get_parameter('stream_url').value
-                req = urllib.request.urlopen(url, timeout=5)
+                req = urllib.request.urlopen(url, timeout=15)
                 self.stream = req
                 self._connected = True
                 self.get_logger().info('Stream conectado OK')

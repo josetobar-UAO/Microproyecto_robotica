@@ -1,9 +1,15 @@
 /**
- * ESP32-CAM AI Thinker — Servidor MJPEG
+ * ESP32-CAM AI Thinker — Servidor MJPEG + control flash
  * ══════════════════════════════════════════════════════════════
- * Stream:    http://<IP>:81/stream   ← el nodo ROS2 consume esto
- * Snapshot:  http://<IP>/capture
- * Status:    http://<IP>/status      ← devuelve IP en JSON
+ * Stream:    http://<IP>:81/stream
+ * Flash ON:  http://<IP>/flash?val=1
+ * Flash OFF: http://<IP>/flash?val=0
+ * Status:    http://<IP>/status
+ *
+ * Arquitectura dual-core FreeRTOS:
+ *   Core 0 → stream_task  : servidor MJPEG puerto 81 (bloqueable)
+ *   Core 1 → control_task : servidor HTTP  puerto 80 (flash, status)
+ * Asi el flash responde aunque el stream este ocupado
  * ══════════════════════════════════════════════════════════════
  */
 #include "Arduino.h"
@@ -12,11 +18,14 @@
 #include "soc/rtc_cntl_reg.h"
 #include "WiFi.h"
 #include "WebServer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
-// Pines camara AI Thinker ESP-32S
 #define WIFI_SSID     "JoseTobar"
 #define WIFI_PASSWORD "87654321"
 #define STREAM_PORT   81
+
+// Pines camara AI Thinker ESP-32S
 #define PWDN_GPIO_NUM  32
 #define RESET_GPIO_NUM -1
 #define XCLK_GPIO_NUM   0
@@ -35,13 +44,18 @@
 #define PCLK_GPIO_NUM  22
 #define LED_GPIO_NUM    4
 
-WebServer server(80);
-WebServer stream_server(STREAM_PORT);
+// Servidores en objetos globales
+WebServer control_server(80);    // Core 1 — flash, status
+WebServer stream_server(STREAM_PORT);  // Core 0 — MJPEG
 
 static const char* STREAM_BOUNDARY = "\r\n--frame\r\n";
 static const char* STREAM_PART =
   "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
 
+// Estado del flash (acceso desde ambos cores — volatile)
+volatile bool flash_state = false;
+
+// ── Inicializar camara ────────────────────────────────────────
 bool camera_init() {
   camera_config_t cfg;
   cfg.ledc_channel = LEDC_CHANNEL_0;
@@ -52,18 +66,17 @@ bool camera_init() {
   cfg.pin_d6 = Y8_GPIO_NUM; cfg.pin_d7 = Y9_GPIO_NUM;
   cfg.pin_xclk  = XCLK_GPIO_NUM;  cfg.pin_pclk  = PCLK_GPIO_NUM;
   cfg.pin_vsync = VSYNC_GPIO_NUM; cfg.pin_href  = HREF_GPIO_NUM;
-  // Después (correcto)
   cfg.pin_sccb_sda = SIOD_GPIO_NUM; cfg.pin_sccb_scl = SIOC_GPIO_NUM;
   cfg.pin_pwdn  = PWDN_GPIO_NUM;  cfg.pin_reset = RESET_GPIO_NUM;
   cfg.xclk_freq_hz = 20000000;
   cfg.pixel_format = PIXFORMAT_JPEG;
 
   if (psramFound()) {
-    cfg.frame_size   = FRAMESIZE_VGA;   // 640x480
+    cfg.frame_size   = FRAMESIZE_VGA;
     cfg.jpeg_quality = 12;
     cfg.fb_count     = 2;
   } else {
-    cfg.frame_size   = FRAMESIZE_QVGA;  // 320x240
+    cfg.frame_size   = FRAMESIZE_QVGA;
     cfg.jpeg_quality = 20;
     cfg.fb_count     = 1;
   }
@@ -80,6 +93,7 @@ bool camera_init() {
   return true;
 }
 
+// ── Handler stream MJPEG ─────────────────────────────────────
 void handle_stream() {
   WiFiClient client = stream_server.client();
   camera_fb_t* fb  = nullptr;
@@ -98,27 +112,67 @@ void handle_stream() {
     stream_server.sendContent(part_buf, hlen);
     stream_server.sendContent((const char*)fb->buf, fb->len);
     esp_camera_fb_return(fb);
-    delay(33);  // ~30 fps
+    delay(33);
   }
 }
 
-void handle_capture() {
-  camera_fb_t* fb = esp_camera_fb_get();
-  if (!fb) { server.send(500, "text/plain", "Error"); return; }
-  server.send_P(200, "image/jpeg", (const char*)fb->buf, fb->len);
-  esp_camera_fb_return(fb);
+// ── Handlers servidor de control (puerto 80) ─────────────────
+void handle_flash() {
+  if (control_server.hasArg("val")) {
+    int val    = control_server.arg("val").toInt();
+    flash_state = (val == 1);
+    digitalWrite(LED_GPIO_NUM, flash_state ? HIGH : LOW);
+    Serial.printf("[INFO] Flash: %s\n", flash_state ? "ON" : "OFF");
+    control_server.send(200, "application/json",
+      flash_state ? "{\"flash\":\"ON\"}" : "{\"flash\":\"OFF\"}");
+  } else {
+    control_server.send(400, "text/plain", "Falta param val");
+  }
 }
 
 void handle_status() {
   String json = "{\"ip\":\"" + WiFi.localIP().toString() + "\","
-                "\"psram\":" + String(psramFound() ? "true":"false") + "}";
-  server.send(200, "application/json", json);
+                "\"psram\":"  + String(psramFound() ? "true":"false") + ","
+                "\"flash\":"  + String(flash_state  ? "true":"false") + "}";
+  control_server.send(200, "application/json", json);
 }
 
+void handle_capture() {
+  camera_fb_t* fb = esp_camera_fb_get();
+  if (!fb) { control_server.send(500, "text/plain", "Error"); return; }
+  control_server.send_P(200, "image/jpeg", (const char*)fb->buf, fb->len);
+  esp_camera_fb_return(fb);
+}
+
+// ── Task Core 0: servidor MJPEG ───────────────────────────────
+void stream_task(void*) {
+  stream_server.on("/stream", HTTP_GET, handle_stream);
+  stream_server.begin();
+  Serial.printf("[OK] Stream servidor en puerto %d\n", STREAM_PORT);
+  while (true) {
+    stream_server.handleClient();
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
+}
+
+// ── Task Core 1: servidor de control ─────────────────────────
+void control_task(void*) {
+  control_server.on("/flash",   HTTP_GET, handle_flash);
+  control_server.on("/status",  HTTP_GET, handle_status);
+  control_server.on("/capture", HTTP_GET, handle_capture);
+  control_server.begin();
+  Serial.println("[OK] Control servidor en puerto 80");
+  while (true) {
+    control_server.handleClient();
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
+}
+
+// ── SETUP ─────────────────────────────────────────────────────
 void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
   Serial.begin(115200);
-  delay(1000); // dar tiempo al monitor a conectarse
+  delay(1000);
   Serial.println("\n===== ESP32-CAM AI Thinker =====");
 
   pinMode(LED_GPIO_NUM, OUTPUT);
@@ -140,20 +194,17 @@ void setup() {
     delay(2000); ESP.restart();
   }
 
-  // Ahora SÍ tiene IP
-  Serial.printf("\n[OK] IP: %s\n", WiFi.localIP().toString().c_str());
-  Serial.printf("[OK] Stream: http://%s:%d/stream\n",
+  Serial.printf("\n[OK] IP:       %s\n",   WiFi.localIP().toString().c_str());
+  Serial.printf("[OK] Stream:   http://%s:%d/stream\n",
                 WiFi.localIP().toString().c_str(), STREAM_PORT);
+  Serial.printf("[OK] Flash ON: http://%s/flash?val=1\n",
+                WiFi.localIP().toString().c_str());
 
-  server.on("/capture", HTTP_GET, handle_capture);
-  server.on("/status",  HTTP_GET, handle_status);
-  server.begin();
-
-  stream_server.on("/stream", HTTP_GET, handle_stream);
-  stream_server.begin();
+  // Lanzar tareas en cores separados
+  xTaskCreatePinnedToCore(stream_task,  "stream",  8192, NULL, 5, NULL, 0);
+  xTaskCreatePinnedToCore(control_task, "control", 4096, NULL, 5, NULL, 1);
 }
 
 void loop() {
-  server.handleClient();
-  stream_server.handleClient();
+  vTaskDelay(pdMS_TO_TICKS(1000));
 }
