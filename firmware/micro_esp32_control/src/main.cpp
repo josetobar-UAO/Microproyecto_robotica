@@ -48,12 +48,12 @@
 //  Pines TB6612FNG (segun esquematico)
 //  Motor A = Rueda_der  |  Motor B = Rueda_izq
 // ════════════════════════════════════════════════════════════════
-#define PWMA_PIN    25   // D25 → PWMA
-#define PWMB_PIN    23   // D23 → PWMB
-#define MOTORA_IN1  27   // D27 → AI2 (IN1 logico del driver A)
-#define MOTORA_IN2  26   // D26 → AI1 (IN2 logico del driver A)
-#define MOTORB_IN1  14   // D14 → BI1
-#define MOTORB_IN2  13   // D13 → BI2
+#define PWMA_PIN    32   // GPIO32 → PWMA
+#define PWMB_PIN    13   // GPIO13 → PWMB
+#define MOTORA_IN1  26   // GPIO26 → AI2
+#define MOTORA_IN2  25   // GPIO25 → AI1
+#define MOTORB_IN1  14   // GPIO14 → BI1
+#define MOTORB_IN2  27   // GPIO27 → BI2
 
 #define LEDC_FREQ  5000
 #define LEDC_RES   8     // 8 bits → 0-255
@@ -151,7 +151,7 @@ void set_motor_a(float speed)
 {
   if (fabsf(speed) < MIN_PWM_THRESHOLD) {
     digitalWrite(MOTORA_IN1, LOW); digitalWrite(MOTORA_IN2, LOW);
-    ledcWrite(PWMA_PIN, 0); return;
+    ledcWrite(CH_A, 0); return;
   }
   int pwm = constrain((int)(fabsf(speed) * 255.0f), 0, 255);
   digitalWrite(MOTORA_IN1, speed > 0 ? HIGH : LOW);
@@ -164,7 +164,7 @@ void set_motor_b(float speed)
 {
   if (fabsf(speed) < MIN_PWM_THRESHOLD) {
     digitalWrite(MOTORB_IN1, LOW); digitalWrite(MOTORB_IN2, LOW);
-    ledcWrite(PWMB_PIN, 0); return;
+    ledcWrite(CH_B, 0); return;
   }
   int pwm = constrain((int)(fabsf(speed) * 255.0f), 0, 255);
   digitalWrite(MOTORB_IN1, speed > 0 ? HIGH : LOW);
@@ -409,7 +409,7 @@ void setup()
   cmd_mutex = xSemaphoreCreateMutex();
 
   xTaskCreatePinnedToCore(imu_task,      "imu",      4096, NULL, 6, NULL, 1);
-  xTaskCreatePinnedToCore(motors_task,   "motors",   2048, NULL, 5, NULL, 1);
+  xTaskCreatePinnedToCore(motors_task,   "motors",   4096, NULL, 5, NULL, 1);
   xTaskCreatePinnedToCore(microros_task, "microros", 8192, NULL, 5, NULL, 0);
 
   Serial.println("[INFO] Tasks activos");

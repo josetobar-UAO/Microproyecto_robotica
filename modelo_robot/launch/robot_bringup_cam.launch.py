@@ -11,10 +11,9 @@ from launch.actions import DeclareLaunchArgument
 def generate_launch_description():
     pkg = get_package_share_directory('modelo_robot')
 
-    # Argumento para IP de la ESP32-CAM (cambiar segun tu red)
     cam_ip_arg = DeclareLaunchArgument(
         'cam_ip',
-        default_value='192.168.1.100',
+        default_value='172.20.10.5',
         description='IP de la ESP32-CAM en la red WiFi')
 
     cam_ip = LaunchConfiguration('cam_ip')
@@ -24,10 +23,13 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(pkg, 'launch', 'gazebo.launch.py')))
 
-    # 2. micro-ROS agent
+    # 2. micro-ROS agent via Docker (no requiere instalacion ROS2)
     agent = ExecuteProcess(
-        cmd=['ros2', 'run', 'micro_ros_agent', 'micro_ros_agent',
-             'udp4', '--port', '8888', '-v4'],
+        cmd=[
+            'docker', 'run', '--rm', '--net=host',
+            'microros/micro-ros-agent:humble',
+            'udp4', '--port', '8888', '-v4'
+        ],
         output='screen')
 
     # 3. Xbox → /joy
@@ -41,7 +43,7 @@ def generate_launch_description():
             'autorepeat_rate': 20.0,
         }])
 
-    # 4. joy_controller propio → /cmd_vel
+    # 4. joy_controller → /cmd_vel
     joy_controller = Node(
         package='modelo_robot',
         executable='joy_controller',
@@ -52,6 +54,7 @@ def generate_launch_description():
             'scale_angular':       1.5,
             'reverse_speed':       0.25,
             'deadzone':            0.25,
+            'cam_ip':              '172.20.10.5',
         }],
         output='screen')
 
