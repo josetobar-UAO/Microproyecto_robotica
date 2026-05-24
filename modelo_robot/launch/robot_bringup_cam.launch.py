@@ -14,7 +14,7 @@ def generate_launch_description():
     cam_ip_arg = DeclareLaunchArgument(
         'cam_ip',
         default_value='172.20.10.5',
-        description='IP de la ESP32-CAM en la red WiFi')
+        description='IP de la ESP32-CAM')
 
     cam_ip = LaunchConfiguration('cam_ip')
 
@@ -23,13 +23,11 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(pkg, 'launch', 'gazebo.launch.py')))
 
-    # 2. micro-ROS agent via Docker (no requiere instalacion ROS2)
+    # 2. micro-ROS agent nativo (desde ~/uros_ws)
     agent = ExecuteProcess(
-        cmd=[
-            'docker', 'run', '--rm', '--net=host',
-            'microros/micro-ros-agent:humble',
-            'udp4', '--port', '8888', '-v4'
-        ],
+        cmd=['bash', '-c',
+             'source ~/uros_ws/install/setup.bash && '
+             'ros2 run micro_ros_agent micro_ros_agent udp4 --port 8888 -v4'],
         output='screen')
 
     # 3. Xbox → /joy

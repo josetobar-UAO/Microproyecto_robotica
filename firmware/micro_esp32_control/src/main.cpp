@@ -227,6 +227,11 @@ void cmd_vel_callback(const void * msg_in)
 {
   const geometry_msgs__msg__Twist * msg =
     (const geometry_msgs__msg__Twist *)msg_in;
+  
+  // PRINT INMEDIATO antes del semaforo
+  Serial.printf("[CMD_RAW] lin=%.3f ang=%.3f\n",
+    (float)msg->linear.x, (float)msg->angular.z);
+    
   if (xSemaphoreTake(cmd_mutex, pdMS_TO_TICKS(2)) == pdTRUE) {
     g_linear_x  = (float)msg->linear.x;
     g_angular_z = (float)msg->angular.z;
@@ -329,9 +334,11 @@ bool microros_init()
         ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
         "robot_imu") != RCL_RET_OK) return false;
 
-  if (rclc_subscription_init_default(&sub_cmd_vel, &node,
-        ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
-        "cmd_vel") != RCL_RET_OK) return false;
+  // best_effort: micro-ROS acepta mensajes RELIABLE del publisher ROS2
+  if (rclc_subscription_init_default(
+      &sub_cmd_vel, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
+      "cmd_vel") != RCL_RET_OK) return false;
 
   if (rclc_timer_init_default(&timer, &support,
         RCL_MS_TO_NS(20), timer_callback) != RCL_RET_OK) return false;
@@ -376,16 +383,18 @@ void microros_task(void *)
     Serial.println("[WARN] Reintentando en 3s...");
   }
 
+  // Loop del executor — sin delay para no perder mensajes UDP
   while (true) {
-    RCSOFTCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)));
-    vTaskDelay(pdMS_TO_TICKS(10));
+    rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
+    Serial.println("[SPIN]");  // ← debe aparecer constantemente
+    taskYIELD();
   }
   vTaskDelete(NULL);
 }
 
 
 // ════════════════════════════════════════════════════════════════
-//  SETUP
+//  
 // ════════════════════════════════════════════════════════════════
 void setup()
 {
@@ -410,9 +419,34 @@ void setup()
 
   xTaskCreatePinnedToCore(imu_task,      "imu",      4096, NULL, 6, NULL, 1);
   xTaskCreatePinnedToCore(motors_task,   "motors",   4096, NULL, 5, NULL, 1);
-  xTaskCreatePinnedToCore(microros_task, "microros", 8192, NULL, 5, NULL, 0);
+  xTaskCreatePinnedToCore(microros_task, "microros", 12288, NULL, 5, NULL, 0);
 
   Serial.println("[INFO] Tasks activos");
+  // TEST DIRECTO DE MOTORES — agregar en setup() antes de xTaskCreate
+  Serial.println("[TEST] Probando Motor A adelante...");
+  digitalWrite(MOTORA_IN1, HIGH);
+  digitalWrite(MOTORA_IN2, LOW);
+  ledcWrite(CH_A, 200);  // 78% PWM
+  delay(2000);
+
+  Serial.println("[TEST] Parando Motor A...");
+  ledcWrite(CH_A, 0);
+  digitalWrite(MOTORA_IN1, LOW);
+  digitalWrite(MOTORA_IN2, LOW);
+  delay(1000);
+
+  Serial.println("[TEST] Probando Motor B adelante...");
+  digitalWrite(MOTORB_IN1, HIGH);
+  digitalWrite(MOTORB_IN2, LOW);
+  ledcWrite(CH_B, 200);
+  delay(2000);
+
+  Serial.println("[TEST] Parando Motor B...");
+  ledcWrite(CH_B, 0);
+  digitalWrite(MOTORB_IN1, LOW);
+  digitalWrite(MOTORB_IN2, LOW);
+  delay(1000);
+  Serial.println("[TEST] Test motores completo");
 }
 
 void loop() { vTaskDelay(pdMS_TO_TICKS(1000)); }
