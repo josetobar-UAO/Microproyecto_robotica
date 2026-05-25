@@ -422,12 +422,39 @@ void setup()
   //  I2C a 100 kHz (mas estable que 400 kHz con cableado real) y
   //  con timeout: una lectura fallida nunca cuelga el task.
   Wire.begin(I2C_SDA, I2C_SCL);
-  Wire.setClock(100000);
-  Wire.setTimeOut(25);          // ms — evita bloqueos del bus I2C
+Wire.setClock(100000);
+Wire.setTimeOut(50);
 
-  mpu.initialize();
-  delay(100);                   // dar tiempo a que el MPU se asiente
-  imu_ok = mpu.testConnection();
+delay(200);  // power-on
+
+// Reset manual del MPU6050 via registro directo
+Wire.beginTransmission(0x68);
+Wire.write(0x6B);  // PWR_MGMT_1
+Wire.write(0x80);  // RESET
+Wire.endTransmission();
+delay(100);
+
+// Wake up
+Wire.beginTransmission(0x68);
+Wire.write(0x6B);
+Wire.write(0x00);  // clk internal, wake
+Wire.endTransmission();
+delay(50);
+
+mpu.initialize();
+delay(50);
+
+// Verificacion directa por registro (sin depender de testConnection)
+Wire.beginTransmission(0x68);
+Wire.write(0x75);  // WHO_AM_I register
+Wire.endTransmission(false);
+Wire.requestFrom((uint8_t)0x68, (uint8_t)1);
+uint8_t who = Wire.read();
+Serial.printf("[DEBUG] WHO_AM_I = 0x%02X (esperado: 0x68)\n", who);
+
+imu_ok = (who == 0x68 || who == 0x70);
+mpu.setDeviceID(0x70);  // fuerza el ID esperado
+Wire.setTimeOut(25);
 
   if (imu_ok) {
     Serial.println("[OK] MPU6050 conectado (addr 0x68) — IMU activo");
