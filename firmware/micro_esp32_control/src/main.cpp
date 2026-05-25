@@ -333,16 +333,22 @@ bool microros_init()
   cmd_vel_qos.history     = RMW_QOS_POLICY_HISTORY_KEEP_LAST;
   cmd_vel_qos.depth       = 10;
 
-  if (rclc_subscription_init(
-        &sub_cmd_vel, &node,
-        ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
-        "cmd_vel", &cmd_vel_qos) != RCL_RET_OK) return false;
+  // Cambia esto en microros_init():
+
+// BORRA todo el bloque rmw_qos_profile_t y cambia a:
+if (rclc_subscription_init_default(
+      &sub_cmd_vel, &node,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
+      "cmd_vel") != RCL_RET_OK) {
+  Serial.println("[INIT] sub_cmd_vel FALLO");
+  return false;
+}
 
   if (rclc_timer_init_default(&timer, &support,
         RCL_MS_TO_NS(20), timer_callback) != RCL_RET_OK) return false;
 
   executor = rclc_executor_get_zero_initialized_executor();
-  if (rclc_executor_init(&executor, &support.context, 2, &allocator) != RCL_RET_OK) return false;
+  if (rclc_executor_init(&executor, &support.context, 4, &allocator) != RCL_RET_OK) return false;
   if (rclc_executor_add_timer(&executor, &timer) != RCL_RET_OK) return false;
   if (rclc_executor_add_subscription(&executor, &sub_cmd_vel,
         &cmd_vel_msg, &cmd_vel_callback, ON_NEW_DATA) != RCL_RET_OK) return false;
