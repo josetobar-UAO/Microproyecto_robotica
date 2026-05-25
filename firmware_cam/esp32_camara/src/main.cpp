@@ -20,9 +20,6 @@
 #include "WebServer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
-#define WIFI_SSID     "JoseTobar"
-#define WIFI_PASSWORD "87654321"
 #define STREAM_PORT   81
 
 // Pines camara AI Thinker ESP-32S

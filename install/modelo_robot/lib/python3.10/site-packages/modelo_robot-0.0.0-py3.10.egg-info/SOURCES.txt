@@ -10,8 +10,10 @@ setup.py
 ../build/modelo_robot/modelo_robot.egg-info/zip-safe
 launch/display.launch.py
 launch/gazebo.launch.py
+launch/real_teleop.launch.py
 launch/robot_bringup.launch.py
 launch/robot_bringup_cam.launch.py
+launch/sim_gazebo.launch.py
 meshes/Cam_link.STL
 meshes/Rueda_der.STL
 meshes/Rueda_izq.STL

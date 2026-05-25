@@ -22,7 +22,6 @@ Controles:
 """
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import Joy
 from geometry_msgs.msg import Twist
 import urllib.request
@@ -57,16 +56,15 @@ class JoyController(Node):
         self.flash_on       = False
         self.btn_flash_prev = 0   # para detectar flanco ascendente
 
-        # QoS explicito para cmd_vel — RELIABLE/VOLATILE/KEEP_LAST.
-        # Debe coincidir con el subscriber de la ESP32 (micro-ROS),
-        # que tambien usa RELIABLE. Asi el emparejamiento DDS es
-        # garantizado y los Twist llegan siempre al robot fisico.
-        cmd_vel_qos = QoSProfile(depth=10)
-        cmd_vel_qos.reliability = ReliabilityPolicy.RELIABLE
-        cmd_vel_qos.durability  = DurabilityPolicy.VOLATILE
-        cmd_vel_qos.history     = HistoryPolicy.KEEP_LAST
-
-        self.pub = self.create_publisher(Twist, 'cmd_vel', cmd_vel_qos)
+        # cmd_vel se publica con QoS por defecto (depth=10).
+        # NO se fuerza RELIABLE: el subscriber de la ESP32 usa
+        # rclc_subscription_init_default y, sobre el puente
+        # XRCE-DDS, un publisher RELIABLE explicito a menudo no
+        # completa el matching con el cliente micro-ROS aunque el
+        # agente reporte la conexion. El perfil default empareja
+        # de forma fiable — es el mismo que usan teleop_twist_*
+        # y ros2 topic pub.
+        self.pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.create_subscription(Joy, 'joy', self.joy_callback, 10)
         self.get_logger().info('═══════════════════════════════════')
         self.get_logger().info('joy_controller activo')
@@ -74,7 +72,7 @@ class JoyController(Node):
         self.get_logger().info('RB + stick izq = turbo')
         self.get_logger().info('A = reversa  |  B = freno')
         self.get_logger().info('X = toggle flash ESP32-CAM')
-        self.get_logger().info('cmd_vel QoS: RELIABLE')
+        self.get_logger().info('cmd_vel QoS: default')
         self.get_logger().info('═══════════════════════════════════')
 
     def apply_deadzone(self, value: float) -> float:

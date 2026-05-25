@@ -10,8 +10,10 @@
 /home/tobar/microproyecto_ws/install/modelo_robot/share/modelo_robot/package.xml
 /home/tobar/microproyecto_ws/install/modelo_robot/share/modelo_robot/urdf/URDF_Microproyecto_9.csv
 /home/tobar/microproyecto_ws/install/modelo_robot/share/modelo_robot/urdf/URDF_Microproyecto_9.urdf
+/home/tobar/microproyecto_ws/install/modelo_robot/share/modelo_robot/launch/sim_gazebo.launch.py
 /home/tobar/microproyecto_ws/install/modelo_robot/share/modelo_robot/launch/robot_bringup.launch.py
 /home/tobar/microproyecto_ws/install/modelo_robot/share/modelo_robot/launch/robot_bringup_cam.launch.py
+/home/tobar/microproyecto_ws/install/modelo_robot/share/modelo_robot/launch/real_teleop.launch.py
 /home/tobar/microproyecto_ws/install/modelo_robot/share/modelo_robot/launch/gazebo.launch.py
 /home/tobar/microproyecto_ws/install/modelo_robot/share/modelo_robot/launch/display.launch.py
 /home/tobar/microproyecto_ws/install/modelo_robot/share/modelo_robot/meshes/Cam_link.STL

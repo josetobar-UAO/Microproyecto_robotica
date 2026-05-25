@@ -322,27 +322,21 @@ bool microros_init()
         ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
         "robot_imu") != RCL_RET_OK) return false;
 
-  // QoS explicito para cmd_vel — RELIABLE/VOLATILE/KEEP_LAST.
-  // Empareja de forma garantizada con teleop_twist_keyboard y
-  // ros2 topic pub, que publican en RELIABLE. Un subscriber
-  // best_effort empareja de forma fragil con publisher reliable;
-  // reliable<->reliable empareja siempre.
-  rmw_qos_profile_t cmd_vel_qos = rmw_qos_profile_default;
-  cmd_vel_qos.reliability = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
-  cmd_vel_qos.durability  = RMW_QOS_POLICY_DURABILITY_VOLATILE;
-  cmd_vel_qos.history     = RMW_QOS_POLICY_HISTORY_KEEP_LAST;
-  cmd_vel_qos.depth       = 10;
-
-  // Cambia esto en microros_init():
-
-// BORRA todo el bloque rmw_qos_profile_t y cambia a:
-if (rclc_subscription_init_default(
-      &sub_cmd_vel, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
-      "cmd_vel") != RCL_RET_OK) {
-  Serial.println("[INIT] sub_cmd_vel FALLO");
-  return false;
-}
+  // Suscripcion cmd_vel con QoS por defecto de micro-ROS.
+  // rclc_subscription_init_default usa el perfil que empareja
+  // de forma fiable con un publisher de QoS default (el caso
+  // de teleop_twist_keyboard, rqt_robot_steering, ros2 topic pub
+  // y de joy_controller una vez corregido). No se fuerza un
+  // perfil RELIABLE manual: en el puente XRCE-DDS el matching
+  // reliable<->reliable a menudo no completa aunque el agente
+  // reporte al cliente conectado, y los Twist no llegan.
+  if (rclc_subscription_init_default(
+        &sub_cmd_vel, &node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
+        "cmd_vel") != RCL_RET_OK) {
+    Serial.println("[ERROR] subscriber cmd_vel");
+    return false;
+  }
 
   if (rclc_timer_init_default(&timer, &support,
         RCL_MS_TO_NS(20), timer_callback) != RCL_RET_OK) return false;
@@ -451,28 +445,32 @@ void setup()
 {
   Serial.begin(115200);
   delay(500);
-  Serial.println("\n===== ROBOT ESP32 BOOT =====");
+  Serial.println("\n===== ROBOT ESP32 BOOT (IMU DESACTIVADO - PRUEBA) =====");
 
   motors_init();
   Serial.println("[OK] TB6612FNG listo");
 
-  Wire.begin(I2C_SDA, I2C_SCL);
-  Wire.setClock(400000);
-  mpu.initialize();
-  if (!mpu.testConnection()) {
-    Serial.println("[ERROR] MPU6050 no encontrado — verifica SDA/SCL");
-  } else {
-    Serial.println("[OK] MPU6050 conectado (addr 0x68)");
-  }
+  // ───────────────────────────────────────────────────────────────
+  //  IMU DESACTIVADO TEMPORALMENTE — version de diagnostico.
+  //  Si el MPU6050 no responde en el bus I2C, mpu.getMotion6()
+  //  puede colgar el imu_task o disparar el watchdog, reiniciando
+  //  el ESP32 en medio de microros_init(). Eso impedia que la
+  //  suscripcion /cmd_vel se mantuviera y publicara en el grafo.
+  //  Con el IMU fuera, si la teleoperacion funciona, queda
+  //  confirmado que el problema era el IMU/cableado.
+  //
+  //  Wire.begin / mpu.initialize / imu_task quedan comentados.
+  // ───────────────────────────────────────────────────────────────
+  Serial.println("[WARN] IMU desactivado (modo prueba teleop)");
 
   imu_mutex = xSemaphoreCreateMutex();
   cmd_mutex = xSemaphoreCreateMutex();
 
-  xTaskCreatePinnedToCore(imu_task,      "imu",      4096, NULL, 6, NULL, 1);
+  // imu_task NO se lanza en esta version de prueba.
   xTaskCreatePinnedToCore(motors_task,   "motors",   4096, NULL, 5, NULL, 1);
   xTaskCreatePinnedToCore(microros_task, "microros", 16384, NULL, 5, NULL, 0);
 
-  Serial.println("[INFO] Tasks activos");
+  Serial.println("[INFO] Tasks activos (solo motors + microros)");
 }
 
 void loop() { vTaskDelay(pdMS_TO_TICKS(1000)); }
