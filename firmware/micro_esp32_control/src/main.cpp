@@ -1,22 +1,25 @@
 /**
- * main.cpp — Robot ESP32 DevKit v1
+ * main.cpp — Robot ESP32 DevKit v1   [VERSION DEFINITIVA]
  * ══════════════════════════════════════════════════════════════════
+ * Cambios respecto a la version anterior:
+ *   1. IMU TOLERANTE A FALLOS: si el MPU6050 no responde, el robot
+ *      arranca igual y la teleoperacion funciona. El imu_task solo
+ *      se lanza si imu_ok == true.
+ *   2. I2C ROBUSTO: 100 kHz (mas estable que 400 kHz con cableado
+ *      real) + Wire.setTimeOut(25) para que una lectura fallida
+ *      nunca cuelgue el task ni dispare el watchdog.
+ *   3. YAW REAL: el giroscopio (gz) se integra en un angulo de yaw
+ *      acumulado. El quaternion publicado en /robot_imu ya NO tiene
+ *      yaw=0; lleva la rotacion real en Z, que es la que el nodo de
+ *      odometria necesita para estimar la trayectoria del robot.
+ *
  * Hardware (segun esquematico):
- *   - TB6612FNG (ROB-14450)
- *       PWMA → D32  |  AI1 → D25  |  AI2 → D26   (Motor A = Rueda_der)
- *       PWMB → D13  |  BI1 → D14  |  BI2 → D27   (Motor B = Rueda_izq)
- *       STBY → 3.3V (siempre activo)
- *   - IMU MPU6050 (modulo OC09600)
- *       SDA → D21  |  SCL → D22
+ *   - TB6612FNG: PWMA→D32 AI1→D25 AI2→D26 | PWMB→D13 BI1→D14 BI2→D27
+ *   - MPU6050:   SDA→D21  SCL→D22
  *   - micro-ROS via WiFi UDP
  *
- * Arquitectura FreeRTOS (dual-core):
- *   Core 0 → microros_task  : WiFi + agente + executor ROS2
- *   Core 1 → motors_task    : aplica cmd_vel a motores a 50 Hz
- *   Core 1 → imu_task       : lee MPU6050 a 100 Hz
- *
  * Topicos ROS2:
- *   Publica  /robot_imu   (sensor_msgs/Imu)
+ *   Publica  /robot_imu   (sensor_msgs/Imu)  — con yaw real
  *   Suscribe /cmd_vel     (geometry_msgs/Twist)
  * ══════════════════════════════════════════════════════════════════
  */
@@ -32,31 +35,30 @@
 #include <rcl/rcl.h>
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
-#include <rmw_microros/rmw_microros.h>   // rmw_uros_ping_agent
 #include <sensor_msgs/msg/imu.h>
 #include <geometry_msgs/msg/twist.h>
 
 // ════════════════════════════════════════════════════════════════
-//  Pines I2C — OC09600 (MPU6050)
+//  Pines I2C — MPU6050
 // ════════════════════════════════════════════════════════════════
 #define I2C_SDA 21
 #define I2C_SCL 22
 
+#define CH_A 0
+#define CH_B 1
+
 // ════════════════════════════════════════════════════════════════
-//  Pines TB6612FNG (segun esquematico)
-//  Motor A = Rueda_der  |  Motor B = Rueda_izq
+//  Pines TB6612FNG (Motor A = Rueda_der | Motor B = Rueda_izq)
 // ════════════════════════════════════════════════════════════════
-#define PWMA_PIN    32   // GPIO32 → PWMA
-#define PWMB_PIN    13   // GPIO13 → PWMB
-#define MOTORA_IN1  26   // GPIO26 → AI2
-#define MOTORA_IN2  25   // GPIO25 → AI1
-#define MOTORB_IN1  14   // GPIO14 → BI1
-#define MOTORB_IN2  27   // GPIO27 → BI2
+#define PWMA_PIN    32
+#define PWMB_PIN    13
+#define MOTORA_IN1  26
+#define MOTORA_IN2  25
+#define MOTORB_IN1  14
+#define MOTORB_IN2  27
 
 #define LEDC_FREQ  5000
-#define LEDC_RES   8     // 8 bits → 0-255
-#define CH_A       0     // canal LEDC Motor A
-#define CH_B       1     // canal LEDC Motor B
+#define LEDC_RES   8
 
 // ════════════════════════════════════════════════════════════════
 //  Geometria del robot (del URDF)
@@ -71,6 +73,11 @@
 // ════════════════════════════════════════════════════════════════
 static constexpr float ACCEL_SCALE = 9.80665f / 16384.0f;
 static constexpr float GYRO_SCALE  = (3.14159265f / 180.0f) / 131.0f;
+
+// Umbral anti-deriva del giroscopio en reposo: por debajo de este
+// valor (rad/s) se considera ruido y no se integra al yaw. Esto
+// evita que el yaw se desvie solo con el robot quieto.
+#define GYRO_Z_DEADBAND   0.012f
 
 #define RCSOFTCHECK(fn) { (void)(fn); }
 
@@ -92,15 +99,22 @@ static geometry_msgs__msg__Twist  cmd_vel_msg;
 // ════════════════════════════════════════════════════════════════
 static MPU6050 mpu;
 
+// Bandera global: true solo si el MPU6050 respondio en el arranque.
+// Si es false, imu_task NO se lanza y el robot funciona sin IMU.
+static bool imu_ok = false;
+
 static SemaphoreHandle_t imu_mutex;
 static struct {
   float ax, ay, az;
   float gx, gy, gz;
-  float qw, qx, qy, qz;
+  float qw, qx, qy, qz;   // quaternion con yaw real
 } imu_data = {0,0,0,0,0,0, 1,0,0,0};
 
+// Estado del filtro: pitch/roll por filtro complementario,
+// yaw por integracion directa del giroscopio Z.
 static float pitch_est = 0.0f;
 static float roll_est  = 0.0f;
+static float yaw_est   = 0.0f;
 static unsigned long last_imu_us = 0;
 
 // ════════════════════════════════════════════════════════════════
@@ -110,12 +124,9 @@ static SemaphoreHandle_t cmd_mutex;
 static float g_linear_x  = 0.0f;
 static float g_angular_z = 0.0f;
 
-// Contador de mensajes cmd_vel recibidos — diagnostico
-static volatile uint32_t g_cmd_count = 0;
-
 
 // ════════════════════════════════════════════════════════════════
-//  Control de motores  (API LEDC core 2.x: ledcSetup/ledcAttachPin)
+//  Control de motores
 // ════════════════════════════════════════════════════════════════
 void motors_init()
 {
@@ -131,14 +142,12 @@ void motors_init()
 
   ledcWrite(CH_A, 0);
   ledcWrite(CH_B, 0);
-
   digitalWrite(MOTORA_IN1, LOW);
   digitalWrite(MOTORA_IN2, LOW);
   digitalWrite(MOTORB_IN1, LOW);
   digitalWrite(MOTORB_IN2, LOW);
 }
 
-// Motor A = Rueda_der (speed: -1.0 reversa ... +1.0 adelante)
 void set_motor_a(float speed)
 {
   if (fabsf(speed) < MIN_PWM_THRESHOLD) {
@@ -151,7 +160,6 @@ void set_motor_a(float speed)
   ledcWrite(CH_A, pwm);
 }
 
-// Motor B = Rueda_izq
 void set_motor_b(float speed)
 {
   if (fabsf(speed) < MIN_PWM_THRESHOLD) {
@@ -176,16 +184,24 @@ void apply_cmd_vel(float linear_x, float angular_z)
   float max_s = max(fabsf(sr), fabsf(sl));
   if (max_s > 1.0f) { sr /= max_s; sl /= max_s; }
 
-  set_motor_a(sr);  // Rueda_der
-  set_motor_b(sl);  // Rueda_izq
+  set_motor_a(sr);
+  set_motor_b(sl);
 }
 
 
 // ════════════════════════════════════════════════════════════════
-//  Filtro complementario simple para quaternion
+//  Filtro de orientacion
+//    pitch/roll → filtro complementario (giroscopio + acelerometro)
+//    yaw        → integracion directa del giroscopio Z
+//
+//  El MPU6050 no tiene magnetometro, asi que el yaw no se puede
+//  corregir con un sensor absoluto: se integra gz. Tiene deriva
+//  lenta, aceptable para una sustentacion y para alimentar la
+//  odometria a corto/medio plazo. La banda muerta GYRO_Z_DEADBAND
+//  evita que el yaw se mueva con el robot en reposo.
 // ════════════════════════════════════════════════════════════════
-void update_quaternion(float ax, float ay, float az,
-                       float gx, float gy, float gz, float dt)
+void update_orientation(float ax, float ay, float az,
+                        float gx, float gy, float gz, float dt)
 {
   float accel_pitch = atan2f(ay, az);
   float accel_roll  = atan2f(-ax, sqrtf(ay*ay + az*az));
@@ -193,14 +209,24 @@ void update_quaternion(float ax, float ay, float az,
   pitch_est = 0.98f * (pitch_est + gy * dt) + 0.02f * accel_pitch;
   roll_est  = 0.98f * (roll_est  + gx * dt) + 0.02f * accel_roll;
 
+  // Yaw: integracion del giroscopio Z con banda muerta anti-deriva.
+  if (fabsf(gz) > GYRO_Z_DEADBAND) {
+    yaw_est += gz * dt;
+  }
+  // Normalizar yaw a (-pi, pi]
+  if (yaw_est >  3.14159265f) yaw_est -= 2.0f * 3.14159265f;
+  if (yaw_est < -3.14159265f) yaw_est += 2.0f * 3.14159265f;
+
+  // Euler (roll, pitch, yaw) → quaternion
+  float cy = cosf(yaw_est   * 0.5f), sy = sinf(yaw_est   * 0.5f);
   float cp = cosf(pitch_est * 0.5f), sp = sinf(pitch_est * 0.5f);
   float cr = cosf(roll_est  * 0.5f), sr = sinf(roll_est  * 0.5f);
 
   if (xSemaphoreTake(imu_mutex, pdMS_TO_TICKS(2)) == pdTRUE) {
-    imu_data.qw = cr * cp;
-    imu_data.qx = sr * cp;
-    imu_data.qy = cr * sp;
-    imu_data.qz = -sr * sp;
+    imu_data.qw = cr*cp*cy + sr*sp*sy;
+    imu_data.qx = sr*cp*cy - cr*sp*sy;
+    imu_data.qy = cr*sp*cy + sr*cp*sy;
+    imu_data.qz = cr*cp*sy - sr*sp*cy;
     imu_data.ax = ax; imu_data.ay = ay; imu_data.az = az;
     imu_data.gx = gx; imu_data.gy = gy; imu_data.gz = gz;
     xSemaphoreGive(imu_mutex);
@@ -215,11 +241,6 @@ void cmd_vel_callback(const void * msg_in)
 {
   const geometry_msgs__msg__Twist * msg =
     (const geometry_msgs__msg__Twist *)msg_in;
-
-  g_cmd_count++;
-  Serial.printf("[CMD_RAW] lin=%.3f ang=%.3f\n",
-    (float)msg->linear.x, (float)msg->angular.z);
-
   if (xSemaphoreTake(cmd_mutex, pdMS_TO_TICKS(2)) == pdTRUE) {
     g_linear_x  = (float)msg->linear.x;
     g_angular_z = (float)msg->angular.z;
@@ -230,6 +251,9 @@ void cmd_vel_callback(const void * msg_in)
 
 // ════════════════════════════════════════════════════════════════
 //  Callback timer — publica IMU a 50 Hz
+//  Si el IMU no arranco (imu_ok == false), imu_data conserva el
+//  quaternion identidad (qw=1) y aceleraciones en 0: el mensaje
+//  sigue siendo valido, solo que sin datos reales de sensor.
 // ════════════════════════════════════════════════════════════════
 void timer_callback(rcl_timer_t * timer, int64_t)
 {
@@ -271,7 +295,7 @@ void motors_task(void *)
       last_cmd_time = xTaskGetTickCount();
       apply_cmd_vel(lin, ang);
     } else if ((xTaskGetTickCount() - last_cmd_time) > timeout_tks) {
-      apply_cmd_vel(0.0f, 0.0f);  // seguridad: freno si no hay cmd
+      apply_cmd_vel(0.0f, 0.0f);
     }
     vTaskDelayUntil(&last_wake, period);
   }
@@ -280,6 +304,7 @@ void motors_task(void *)
 
 // ════════════════════════════════════════════════════════════════
 //  Task IMU — Core 1, 100 Hz
+//  Solo se ejecuta si imu_ok == true (ver setup()).
 // ════════════════════════════════════════════════════════════════
 void imu_task(void *)
 {
@@ -300,8 +325,10 @@ void imu_task(void *)
     unsigned long now = micros();
     float dt = (last_imu_us > 0) ? (now - last_imu_us) * 1e-6f : 0.01f;
     last_imu_us = now;
+    // Proteccion: dt fuera de rango razonable se descarta.
+    if (dt <= 0.0f || dt > 0.5f) dt = 0.01f;
 
-    update_quaternion(ax, ay, az, gx, gy, gz, dt);
+    update_orientation(ax, ay, az, gx, gy, gz, dt);
 
     vTaskDelayUntil(&last_wake, period);
   }
@@ -322,27 +349,15 @@ bool microros_init()
         ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
         "robot_imu") != RCL_RET_OK) return false;
 
-  // Suscripcion cmd_vel con QoS por defecto de micro-ROS.
-  // rclc_subscription_init_default usa el perfil que empareja
-  // de forma fiable con un publisher de QoS default (el caso
-  // de teleop_twist_keyboard, rqt_robot_steering, ros2 topic pub
-  // y de joy_controller una vez corregido). No se fuerza un
-  // perfil RELIABLE manual: en el puente XRCE-DDS el matching
-  // reliable<->reliable a menudo no completa aunque el agente
-  // reporte al cliente conectado, y los Twist no llegan.
-  if (rclc_subscription_init_default(
-        &sub_cmd_vel, &node,
+  if (rclc_subscription_init_default(&sub_cmd_vel, &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
-        "cmd_vel") != RCL_RET_OK) {
-    Serial.println("[ERROR] subscriber cmd_vel");
-    return false;
-  }
+        "cmd_vel") != RCL_RET_OK) return false;
 
   if (rclc_timer_init_default(&timer, &support,
         RCL_MS_TO_NS(20), timer_callback) != RCL_RET_OK) return false;
 
   executor = rclc_executor_get_zero_initialized_executor();
-  if (rclc_executor_init(&executor, &support.context, 4, &allocator) != RCL_RET_OK) return false;
+  if (rclc_executor_init(&executor, &support.context, 2, &allocator) != RCL_RET_OK) return false;
   if (rclc_executor_add_timer(&executor, &timer) != RCL_RET_OK) return false;
   if (rclc_executor_add_subscription(&executor, &sub_cmd_vel,
         &cmd_vel_msg, &cmd_vel_callback, ON_NEW_DATA) != RCL_RET_OK) return false;
@@ -352,20 +367,6 @@ bool microros_init()
   imu_msg.orientation_covariance[8] = 0.01f;
 
   return true;
-}
-
-
-// ════════════════════════════════════════════════════════════════
-//  Limpieza completa de entidades micro-ROS
-// ════════════════════════════════════════════════════════════════
-void microros_cleanup()
-{
-  rcl_subscription_fini(&sub_cmd_vel, &node);
-  rcl_publisher_fini(&pub_imu, &node);
-  rcl_timer_fini(&timer);
-  rclc_executor_fini(&executor);
-  rcl_node_fini(&node);
-  rclc_support_fini(&support);
 }
 
 
@@ -382,95 +383,68 @@ void microros_task(void *)
   Serial.printf("[INFO] SSID: %s | Agente: %s:%d\n",
                 WIFI_SSID, AGENT_IP, AGENT_PORT);
 
-  // ── Fase de conexion ───────────────────────────────────────────
   while (true) {
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    vTaskDelay(pdMS_TO_TICKS(3000));
     Serial.println("[INFO] Conectando al agente...");
-
-    if (rmw_uros_ping_agent(200, 5) != RMW_RET_OK) {
-      Serial.println("[WARN] Agente no responde, reintentando...");
-      continue;
-    }
-
     if (microros_init()) {
       Serial.println("[OK] micro-ROS listo — /robot_imu pub | /cmd_vel sub");
       break;
     }
-
-    Serial.println("[WARN] init fallo, limpiando entidades...");
-    microros_cleanup();
-    Serial.println("[WARN] Reintentando en 2s...");
+    rclc_executor_fini(&executor);
+    rclc_support_fini(&support);
+    Serial.println("[WARN] Reintentando en 3s...");
   }
-
-  // ── Loop del executor ──────────────────────────────────────────
-  // CLAVE: vTaskDelay (no taskYIELD) para cederle CPU real al stack
-  // WiFi de Core 0, que es quien drena los paquetes UDP entrantes.
-  unsigned long last_ping = millis();
-  unsigned long last_stat = millis();
-  uint32_t      spin_count = 0;
 
   while (true) {
-    rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
-    spin_count++;
-
-    unsigned long now = millis();
-
-    // Heartbeat de diagnostico cada 2 s: cuantas vueltas + cuantos cmd
-    if (now - last_stat > 2000) {
-      last_stat = now;
-      Serial.printf("[STAT] spins=%lu  cmd_rx=%lu\n",
-                    spin_count, g_cmd_count);
-    }
-
-    // Ping al agente cada 5 s — si cae, reinicio limpio
-    if (now - last_ping > 5000) {
-      last_ping = now;
-      if (rmw_uros_ping_agent(200, 3) != RMW_RET_OK) {
-        Serial.println("[ERROR] Agente perdido — reiniciando...");
-        microros_cleanup();
-        vTaskDelay(pdMS_TO_TICKS(100));
-        ESP.restart();
-      }
-    }
-
-    vTaskDelay(pdMS_TO_TICKS(5));   // ← cede CPU al WiFi: drena UDP
+    RCSOFTCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)));
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
+  vTaskDelete(NULL);
 }
 
 
 // ════════════════════════════════════════════════════════════════
-//  setup()
+//  SETUP
 // ════════════════════════════════════════════════════════════════
 void setup()
 {
   Serial.begin(115200);
   delay(500);
-  Serial.println("\n===== ROBOT ESP32 BOOT (IMU DESACTIVADO - PRUEBA) =====");
+  Serial.println("\n===== ROBOT ESP32 BOOT =====");
 
   motors_init();
   Serial.println("[OK] TB6612FNG listo");
 
-  // ───────────────────────────────────────────────────────────────
-  //  IMU DESACTIVADO TEMPORALMENTE — version de diagnostico.
-  //  Si el MPU6050 no responde en el bus I2C, mpu.getMotion6()
-  //  puede colgar el imu_task o disparar el watchdog, reiniciando
-  //  el ESP32 en medio de microros_init(). Eso impedia que la
-  //  suscripcion /cmd_vel se mantuviera y publicara en el grafo.
-  //  Con el IMU fuera, si la teleoperacion funciona, queda
-  //  confirmado que el problema era el IMU/cableado.
-  //
-  //  Wire.begin / mpu.initialize / imu_task quedan comentados.
-  // ───────────────────────────────────────────────────────────────
-  Serial.println("[WARN] IMU desactivado (modo prueba teleop)");
-
   imu_mutex = xSemaphoreCreateMutex();
   cmd_mutex = xSemaphoreCreateMutex();
 
-  // imu_task NO se lanza en esta version de prueba.
-  xTaskCreatePinnedToCore(motors_task,   "motors",   4096, NULL, 5, NULL, 1);
-  xTaskCreatePinnedToCore(microros_task, "microros", 16384, NULL, 5, NULL, 0);
+  // ── Inicializacion del IMU con manejo de fallo ────────────────
+  //  I2C a 100 kHz (mas estable que 400 kHz con cableado real) y
+  //  con timeout: una lectura fallida nunca cuelga el task.
+  Wire.begin(I2C_SDA, I2C_SCL);
+  Wire.setClock(100000);
+  Wire.setTimeOut(25);          // ms — evita bloqueos del bus I2C
 
-  Serial.println("[INFO] Tasks activos (solo motors + microros)");
+  mpu.initialize();
+  delay(100);                   // dar tiempo a que el MPU se asiente
+  imu_ok = mpu.testConnection();
+
+  if (imu_ok) {
+    Serial.println("[OK] MPU6050 conectado (addr 0x68) — IMU activo");
+    // El imu_task SOLO se lanza si el IMU respondio.
+    xTaskCreatePinnedToCore(imu_task, "imu", 4096, NULL, 6, NULL, 1);
+  } else {
+    Serial.println("[WARN] MPU6050 no responde — robot SIN IMU.");
+    Serial.println("[WARN] La teleoperacion funciona; /robot_imu");
+    Serial.println("[WARN] publicara orientacion identidad (qw=1).");
+  }
+
+  // motors_task y microros_task se lanzan SIEMPRE: la teleoperacion
+  // no depende del IMU.
+  xTaskCreatePinnedToCore(motors_task,   "motors",   4096, NULL, 5, NULL, 1);
+  xTaskCreatePinnedToCore(microros_task, "microros", 8192, NULL, 5, NULL, 0);
+
+  Serial.printf("[INFO] Tasks activos (IMU: %s)\n", imu_ok ? "SI" : "NO");
 }
 
 void loop() { vTaskDelay(pdMS_TO_TICKS(1000)); }

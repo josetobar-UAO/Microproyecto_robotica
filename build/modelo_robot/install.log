@@ -2,10 +2,12 @@
 /home/tobar/microproyecto_ws/install/modelo_robot/lib/python3.10/site-packages/modelo_robot/joy_controller.py
 /home/tobar/microproyecto_ws/install/modelo_robot/lib/python3.10/site-packages/modelo_robot/tf_broadcaster_imu.py
 /home/tobar/microproyecto_ws/install/modelo_robot/lib/python3.10/site-packages/modelo_robot/__init__.py
+/home/tobar/microproyecto_ws/install/modelo_robot/lib/python3.10/site-packages/modelo_robot/odometry_node.py
 /home/tobar/microproyecto_ws/install/modelo_robot/lib/python3.10/site-packages/modelo_robot/__pycache__/mjpeg_to_ros.cpython-310.pyc
 /home/tobar/microproyecto_ws/install/modelo_robot/lib/python3.10/site-packages/modelo_robot/__pycache__/joy_controller.cpython-310.pyc
 /home/tobar/microproyecto_ws/install/modelo_robot/lib/python3.10/site-packages/modelo_robot/__pycache__/tf_broadcaster_imu.cpython-310.pyc
 /home/tobar/microproyecto_ws/install/modelo_robot/lib/python3.10/site-packages/modelo_robot/__pycache__/__init__.cpython-310.pyc
+/home/tobar/microproyecto_ws/install/modelo_robot/lib/python3.10/site-packages/modelo_robot/__pycache__/odometry_node.cpython-310.pyc
 /home/tobar/microproyecto_ws/install/modelo_robot/share/ament_index/resource_index/packages/modelo_robot
 /home/tobar/microproyecto_ws/install/modelo_robot/share/modelo_robot/package.xml
 /home/tobar/microproyecto_ws/install/modelo_robot/share/modelo_robot/urdf/URDF_Microproyecto_9.csv
@@ -31,4 +33,5 @@
 /home/tobar/microproyecto_ws/install/modelo_robot/lib/python3.10/site-packages/modelo_robot-0.0.0-py3.10.egg-info/SOURCES.txt
 /home/tobar/microproyecto_ws/install/modelo_robot/lib/modelo_robot/joy_controller
 /home/tobar/microproyecto_ws/install/modelo_robot/lib/modelo_robot/mjpeg_to_ros
+/home/tobar/microproyecto_ws/install/modelo_robot/lib/modelo_robot/odometry_node
 /home/tobar/microproyecto_ws/install/modelo_robot/lib/modelo_robot/tf_broadcaster_imu

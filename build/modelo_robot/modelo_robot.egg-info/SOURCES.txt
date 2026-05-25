@@ -21,6 +21,7 @@ meshes/base_link.STL
 modelo_robot/__init__.py
 modelo_robot/joy_controller.py
 modelo_robot/mjpeg_to_ros.py
+modelo_robot/odometry_node.py
 modelo_robot/tf_broadcaster_imu.py
 resource/modelo_robot
 test/test_copyright.py

@@ -36,6 +36,8 @@ setup(
         'tf_broadcaster_imu = modelo_robot.tf_broadcaster_imu:main',
         'joy_controller = modelo_robot.joy_controller:main', 
         'mjpeg_to_ros       = modelo_robot.mjpeg_to_ros:main', 
+        'odometry_node = modelo_robot.odometry_node:main',
+
     ],
 },
 )

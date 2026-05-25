@@ -18,7 +18,8 @@ Componentes:
   2. robot_state_publisher        ← TF del robot real
   3. joy_node                     ← Xbox  -> /joy
   4. joy_controller               ← /joy  -> /cmd_vel
-  5. tf_broadcaster_imu           ← /robot_imu -> TF
+  5. tf_broadcaster_imu           ← TF base_link -> imu_link
+  5b. odometry_node               ← /cmd_vel + /robot_imu -> /odom
   6. mjpeg_to_ros                 ← stream ESP32-CAM -> /camera/image_raw
 
 IMPORTANTE: pasa la IP real de la ESP32-CAM con cam_ip:= .
@@ -106,10 +107,25 @@ def generate_launch_description():
         }],
         output='screen')
 
-    # 5. IMU broadcaster — /robot_imu -> TF
+    # 5. IMU broadcaster — TF base_link -> imu_link (solo sensor)
     imu_broadcaster = Node(
         package='modelo_robot',
         executable='tf_broadcaster_imu',
+        output='screen')
+
+    # 5b. Odometria — dead reckoning (cmd_vel) + yaw del IMU.
+    #     Publica /odom y el TF odom -> base_link. Es el nodo
+    #     responsable de la pose del robot (x, y, theta).
+    odometry = Node(
+        package='modelo_robot',
+        executable='odometry_node',
+        name='odometry_node',
+        parameters=[{
+            'odom_frame':   'odom',
+            'base_frame':   'base_link',
+            'publish_rate': 50.0,
+            'imu_timeout':  0.5,
+        }],
         output='screen')
 
     # 6. Camara — consume el stream MJPEG de la ESP32-CAM y lo
@@ -138,6 +154,7 @@ def generate_launch_description():
         # ya tenga al ESP32 emparejado cuando empiece a publicar.
         TimerAction(period=3.0, actions=[joy_controller]),
         TimerAction(period=4.0, actions=[imu_broadcaster]),
+        TimerAction(period=4.0, actions=[odometry]),
         # La camara arranca al final: da tiempo a que la ESP32-CAM
         # termine de conectarse al WiFi antes del primer intento.
         TimerAction(period=5.0, actions=[camera]),
