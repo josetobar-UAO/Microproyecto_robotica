@@ -3,13 +3,13 @@
  * ══════════════════════════════════════════════════════════════════
  * Hardware (segun esquematico):
  *   - TB6612FNG (ROB-14450)
- *       PWMA → D25  |  AI1 → D27  |  AI2 → D26   (Motor A = Rueda_der)
- *       PWMB → D23  |  BI1 → D14  |  BI2 → D13   (Motor B = Rueda_izq)
+ *       PWMA → D32  |  AI1 → D25  |  AI2 → D26   (Motor A = Rueda_der)
+ *       PWMB → D13  |  BI1 → D14  |  BI2 → D27   (Motor B = Rueda_izq)
  *       STBY → 3.3V (siempre activo)
  *   - IMU MPU6050 (modulo OC09600)
  *       SDA → D21  |  SCL → D22
  *   - micro-ROS via WiFi UDP
- *  
+ *
  * Arquitectura FreeRTOS (dual-core):
  *   Core 0 → microros_task  : WiFi + agente + executor ROS2
  *   Core 1 → motors_task    : aplica cmd_vel a motores a 50 Hz
@@ -32,6 +32,7 @@
 #include <rcl/rcl.h>
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
+#include <rmw_microros/rmw_microros.h>   // rmw_uros_ping_agent
 #include <sensor_msgs/msg/imu.h>
 #include <geometry_msgs/msg/twist.h>
 
@@ -40,9 +41,6 @@
 // ════════════════════════════════════════════════════════════════
 #define I2C_SDA 21
 #define I2C_SCL 22
-
-#define CH_A 0
-#define CH_B 1
 
 // ════════════════════════════════════════════════════════════════
 //  Pines TB6612FNG (segun esquematico)
@@ -57,13 +55,11 @@
 
 #define LEDC_FREQ  5000
 #define LEDC_RES   8     // 8 bits → 0-255
+#define CH_A       0     // canal LEDC Motor A
+#define CH_B       1     // canal LEDC Motor B
 
 // ════════════════════════════════════════════════════════════════
 //  Geometria del robot (del URDF)
-//    wheel_separation = 0.0808 m
-//    MAX_LINEAR_VEL   = velocidad real a duty 100%
-//                       Medir: marcar 1m, cronometrar con cmd_vel=0.3
-//                       y ajustar hasta que coincida con Gazebo
 // ════════════════════════════════════════════════════════════════
 #define WHEEL_SEPARATION  0.0808f
 #define MAX_LINEAR_VEL    0.3f
@@ -73,8 +69,8 @@
 // ════════════════════════════════════════════════════════════════
 //  Escalas MPU6050 (rango por defecto: ±2g, ±250°/s)
 // ════════════════════════════════════════════════════════════════
-static constexpr float ACCEL_SCALE = 9.80665f / 16384.0f;  // m/s²/LSB
-static constexpr float GYRO_SCALE  = (3.14159265f / 180.0f) / 131.0f; // rad/s/LSB
+static constexpr float ACCEL_SCALE = 9.80665f / 16384.0f;
+static constexpr float GYRO_SCALE  = (3.14159265f / 180.0f) / 131.0f;
 
 #define RCSOFTCHECK(fn) { (void)(fn); }
 
@@ -100,10 +96,9 @@ static SemaphoreHandle_t imu_mutex;
 static struct {
   float ax, ay, az;
   float gx, gy, gz;
-  float qw, qx, qy, qz;  // quaternion simple (complementary filter)
+  float qw, qx, qy, qz;
 } imu_data = {0,0,0,0,0,0, 1,0,0,0};
 
-// Estado del filtro complementario
 static float pitch_est = 0.0f;
 static float roll_est  = 0.0f;
 static unsigned long last_imu_us = 0;
@@ -115,23 +110,22 @@ static SemaphoreHandle_t cmd_mutex;
 static float g_linear_x  = 0.0f;
 static float g_angular_z = 0.0f;
 
+// Contador de mensajes cmd_vel recibidos — diagnostico
+static volatile uint32_t g_cmd_count = 0;
+
 
 // ════════════════════════════════════════════════════════════════
-//  Control de motores
+//  Control de motores  (API LEDC core 2.x: ledcSetup/ledcAttachPin)
 // ════════════════════════════════════════════════════════════════
-
-  void motors_init()
+void motors_init()
 {
   pinMode(MOTORA_IN1, OUTPUT);
   pinMode(MOTORA_IN2, OUTPUT);
   pinMode(MOTORB_IN1, OUTPUT);
   pinMode(MOTORB_IN2, OUTPUT);
 
-  // PWM Motor A
   ledcSetup(CH_A, LEDC_FREQ, LEDC_RES);
   ledcAttachPin(PWMA_PIN, CH_A);
-
-  // PWM Motor B
   ledcSetup(CH_B, LEDC_FREQ, LEDC_RES);
   ledcAttachPin(PWMB_PIN, CH_B);
 
@@ -144,9 +138,7 @@ static float g_angular_z = 0.0f;
   digitalWrite(MOTORB_IN2, LOW);
 }
 
-
 // Motor A = Rueda_der (speed: -1.0 reversa ... +1.0 adelante)
-// Si la rueda gira al reves, intercambia IN1 e IN2
 void set_motor_a(float speed)
 {
   if (fabsf(speed) < MIN_PWM_THRESHOLD) {
@@ -191,20 +183,16 @@ void apply_cmd_vel(float linear_x, float angular_z)
 
 // ════════════════════════════════════════════════════════════════
 //  Filtro complementario simple para quaternion
-//  (el MPU6050 basico no tiene DMP accesible facilmente via I2C raw)
 // ════════════════════════════════════════════════════════════════
 void update_quaternion(float ax, float ay, float az,
                        float gx, float gy, float gz, float dt)
 {
-  // Angulos desde acelerometro (en reposo)
   float accel_pitch = atan2f(ay, az);
   float accel_roll  = atan2f(-ax, sqrtf(ay*ay + az*az));
 
-  // Filtro complementario: 98% giroscopo + 2% acelerometro
   pitch_est = 0.98f * (pitch_est + gy * dt) + 0.02f * accel_pitch;
   roll_est  = 0.98f * (roll_est  + gx * dt) + 0.02f * accel_roll;
 
-  // Convertir Euler → quaternion (yaw=0 ya que no hay magnetometro)
   float cp = cosf(pitch_est * 0.5f), sp = sinf(pitch_est * 0.5f);
   float cr = cosf(roll_est  * 0.5f), sr = sinf(roll_est  * 0.5f);
 
@@ -227,11 +215,11 @@ void cmd_vel_callback(const void * msg_in)
 {
   const geometry_msgs__msg__Twist * msg =
     (const geometry_msgs__msg__Twist *)msg_in;
-  
-  // PRINT INMEDIATO antes del semaforo
+
+  g_cmd_count++;
   Serial.printf("[CMD_RAW] lin=%.3f ang=%.3f\n",
     (float)msg->linear.x, (float)msg->angular.z);
-    
+
   if (xSemaphoreTake(cmd_mutex, pdMS_TO_TICKS(2)) == pdTRUE) {
     g_linear_x  = (float)msg->linear.x;
     g_angular_z = (float)msg->angular.z;
@@ -334,11 +322,21 @@ bool microros_init()
         ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
         "robot_imu") != RCL_RET_OK) return false;
 
-  // best_effort: micro-ROS acepta mensajes RELIABLE del publisher ROS2
-  if (rclc_subscription_init_default(
-      &sub_cmd_vel, &node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
-      "cmd_vel") != RCL_RET_OK) return false;
+  // QoS explicito para cmd_vel — RELIABLE/VOLATILE/KEEP_LAST.
+  // Empareja de forma garantizada con teleop_twist_keyboard y
+  // ros2 topic pub, que publican en RELIABLE. Un subscriber
+  // best_effort empareja de forma fragil con publisher reliable;
+  // reliable<->reliable empareja siempre.
+  rmw_qos_profile_t cmd_vel_qos = rmw_qos_profile_default;
+  cmd_vel_qos.reliability = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
+  cmd_vel_qos.durability  = RMW_QOS_POLICY_DURABILITY_VOLATILE;
+  cmd_vel_qos.history     = RMW_QOS_POLICY_HISTORY_KEEP_LAST;
+  cmd_vel_qos.depth       = 10;
+
+  if (rclc_subscription_init(
+        &sub_cmd_vel, &node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
+        "cmd_vel", &cmd_vel_qos) != RCL_RET_OK) return false;
 
   if (rclc_timer_init_default(&timer, &support,
         RCL_MS_TO_NS(20), timer_callback) != RCL_RET_OK) return false;
@@ -349,12 +347,25 @@ bool microros_init()
   if (rclc_executor_add_subscription(&executor, &sub_cmd_vel,
         &cmd_vel_msg, &cmd_vel_callback, ON_NEW_DATA) != RCL_RET_OK) return false;
 
-  // Covarianza IMU (diagonal)
   imu_msg.orientation_covariance[0] = 0.01f;
   imu_msg.orientation_covariance[4] = 0.01f;
   imu_msg.orientation_covariance[8] = 0.01f;
 
   return true;
+}
+
+
+// ════════════════════════════════════════════════════════════════
+//  Limpieza completa de entidades micro-ROS
+// ════════════════════════════════════════════════════════════════
+void microros_cleanup()
+{
+  rcl_subscription_fini(&sub_cmd_vel, &node);
+  rcl_publisher_fini(&pub_imu, &node);
+  rcl_timer_fini(&timer);
+  rclc_executor_fini(&executor);
+  rcl_node_fini(&node);
+  rclc_support_fini(&support);
 }
 
 
@@ -371,30 +382,64 @@ void microros_task(void *)
   Serial.printf("[INFO] SSID: %s | Agente: %s:%d\n",
                 WIFI_SSID, AGENT_IP, AGENT_PORT);
 
+  // ── Fase de conexion ───────────────────────────────────────────
   while (true) {
-    vTaskDelay(pdMS_TO_TICKS(3000));
+    vTaskDelay(pdMS_TO_TICKS(2000));
     Serial.println("[INFO] Conectando al agente...");
+
+    if (rmw_uros_ping_agent(200, 5) != RMW_RET_OK) {
+      Serial.println("[WARN] Agente no responde, reintentando...");
+      continue;
+    }
+
     if (microros_init()) {
       Serial.println("[OK] micro-ROS listo — /robot_imu pub | /cmd_vel sub");
       break;
     }
-    rclc_executor_fini(&executor);
-    rclc_support_fini(&support);
-    Serial.println("[WARN] Reintentando en 3s...");
+
+    Serial.println("[WARN] init fallo, limpiando entidades...");
+    microros_cleanup();
+    Serial.println("[WARN] Reintentando en 2s...");
   }
 
-  // Loop del executor — sin delay para no perder mensajes UDP
+  // ── Loop del executor ──────────────────────────────────────────
+  // CLAVE: vTaskDelay (no taskYIELD) para cederle CPU real al stack
+  // WiFi de Core 0, que es quien drena los paquetes UDP entrantes.
+  unsigned long last_ping = millis();
+  unsigned long last_stat = millis();
+  uint32_t      spin_count = 0;
+
   while (true) {
-    rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
-    Serial.println("[SPIN]");  // ← debe aparecer constantemente
-    taskYIELD();
+    rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
+    spin_count++;
+
+    unsigned long now = millis();
+
+    // Heartbeat de diagnostico cada 2 s: cuantas vueltas + cuantos cmd
+    if (now - last_stat > 2000) {
+      last_stat = now;
+      Serial.printf("[STAT] spins=%lu  cmd_rx=%lu\n",
+                    spin_count, g_cmd_count);
+    }
+
+    // Ping al agente cada 5 s — si cae, reinicio limpio
+    if (now - last_ping > 5000) {
+      last_ping = now;
+      if (rmw_uros_ping_agent(200, 3) != RMW_RET_OK) {
+        Serial.println("[ERROR] Agente perdido — reiniciando...");
+        microros_cleanup();
+        vTaskDelay(pdMS_TO_TICKS(100));
+        ESP.restart();
+      }
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(5));   // ← cede CPU al WiFi: drena UDP
   }
-  vTaskDelete(NULL);
 }
 
 
 // ════════════════════════════════════════════════════════════════
-//  
+//  setup()
 // ════════════════════════════════════════════════════════════════
 void setup()
 {
@@ -419,34 +464,9 @@ void setup()
 
   xTaskCreatePinnedToCore(imu_task,      "imu",      4096, NULL, 6, NULL, 1);
   xTaskCreatePinnedToCore(motors_task,   "motors",   4096, NULL, 5, NULL, 1);
-  xTaskCreatePinnedToCore(microros_task, "microros", 12288, NULL, 5, NULL, 0);
+  xTaskCreatePinnedToCore(microros_task, "microros", 16384, NULL, 5, NULL, 0);
 
   Serial.println("[INFO] Tasks activos");
-  // TEST DIRECTO DE MOTORES — agregar en setup() antes de xTaskCreate
-  Serial.println("[TEST] Probando Motor A adelante...");
-  digitalWrite(MOTORA_IN1, HIGH);
-  digitalWrite(MOTORA_IN2, LOW);
-  ledcWrite(CH_A, 200);  // 78% PWM
-  delay(2000);
-
-  Serial.println("[TEST] Parando Motor A...");
-  ledcWrite(CH_A, 0);
-  digitalWrite(MOTORA_IN1, LOW);
-  digitalWrite(MOTORA_IN2, LOW);
-  delay(1000);
-
-  Serial.println("[TEST] Probando Motor B adelante...");
-  digitalWrite(MOTORB_IN1, HIGH);
-  digitalWrite(MOTORB_IN2, LOW);
-  ledcWrite(CH_B, 200);
-  delay(2000);
-
-  Serial.println("[TEST] Parando Motor B...");
-  ledcWrite(CH_B, 0);
-  digitalWrite(MOTORB_IN1, LOW);
-  digitalWrite(MOTORB_IN2, LOW);
-  delay(1000);
-  Serial.println("[TEST] Test motores completo");
 }
 
 void loop() { vTaskDelay(pdMS_TO_TICKS(1000)); }
